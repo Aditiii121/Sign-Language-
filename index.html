@@ -608,7 +608,8 @@ let ttsEnabled = true, sttActive = false, recognition = null;
 let currentMode = 'alphabet', lastGesture = '', gestureHoldCount = 0;
 let lastCommitTime = 0, totalGestures = 0, totalConf = 0;
 let fpsCount = 0, lastFpsT = Date.now();
-const HOLD_THRESH = 8, COOLDOWN = 850;
+const HOLD_THRESH = 4, COOLDOWN = 400;
+let autoSpaceTimer = null, lastNoHandTime = 0;
 const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 let voices = [];
 
@@ -718,84 +719,204 @@ function initMediaPipe() {
       document.getElementById('gestureLive').classList.remove('show');
       document.getElementById('confBadge').style.display = 'none';
       gestureHoldCount = 0;
+      // Auto-space: add space after 1.5s with no hand (natural pause between words)
+      if (!autoSpaceTimer && lastCommitTime > 0) {
+        autoSpaceTimer = setTimeout(() => {
+          const box = document.getElementById('outputBox');
+          const text = box.textContent.replace('|','').trim();
+          if (text && !text.endsWith(' ')) {
+            box.innerHTML = text + '&nbsp;<span class="cursor"></span>';
+          }
+          autoSpaceTimer = null;
+        }, 1500);
+      }
     }
   });
   mpCamera = new Camera(vid, { onFrame: async () => { await hands.send({ image: vid }); }, width: 1280, height: 720 });
   mpCamera.start();
 }
 
-// CLASSIFICATION
+// CLASSIFICATION — Improved with handedness, normalization, better disambiguation
 const TIP_IDS = [4, 8, 12, 16, 20], PIP_IDS = [3, 7, 11, 15, 19];
+const MCP_IDS = [2, 5, 9, 13, 17]; // knuckle joints
+
+// Detect handedness from wrist+middle finger knuckle orientation
+function isRightHand(lm) { return lm[17].x < lm[5].x; }
+
+// Hand-size normalized distance (works at any camera distance)
+function handSize(lm) { return d3(lm[0], lm[9]); } // wrist to middle MCP
+
 function fingerState(lm) {
+  const right = isRightHand(lm);
   const r = [];
-  r.push(lm[4].x < lm[3].x ? 1 : 0);
+  // Thumb: direction depends on handedness
+  r.push(right ? (lm[4].x < lm[3].x ? 1 : 0) : (lm[4].x > lm[3].x ? 1 : 0));
+  // Other fingers: tip above PIP = extended
   for (let i = 1; i <= 4; i++) r.push(lm[TIP_IDS[i]].y < lm[PIP_IDS[i]].y ? 1 : 0);
   return r;
 }
+
+// More robust: tip significantly above MCP (not just PIP)
+function fingerExtended(lm, i) { return lm[TIP_IDS[i]].y < lm[MCP_IDS[i]].y; }
+function fingerCurled(lm, i) { return lm[TIP_IDS[i]].y > lm[PIP_IDS[i]].y; }
+
 function d3(a, b) { return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2); }
+function d2(a, b) { return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2); }
+
 function classifyGesture(lm, mode) {
+  if (autoSpaceTimer) { clearTimeout(autoSpaceTimer); autoSpaceTimer = null; }
   if (mode === 'numbers') return classifyNumber(lm);
   if (mode === 'words') return classifyWord(lm);
   return classifyASL(lm);
 }
+
 function classifyASL(lm) {
   const fs = fingerState(lm), [thumb,idx,mid,ring,pinky] = fs;
   const total = fs.reduce((a,b)=>a+b,0);
-  const td84=d3(lm[8],lm[4]), td124=d3(lm[12],lm[4]), td812=d3(lm[8],lm[12]);
-  let char=null, conf=0.75;
-  if (total===0&&lm[4].x>lm[3].x)                                  {char='A';conf=0.82;}
-  else if (!thumb&&idx&&mid&&ring&&pinky)                            {char='B';conf=0.85;}
-  else if (td84<0.18&&total<5&&total>0&&!thumb)                     {char='C';conf=0.76;}
-  else if (idx&&!mid&&!ring&&!pinky&&td124<0.12)                    {char='D';conf=0.78;}
-  else if (total===0&&td84>0.08)                                     {char='E';conf=0.74;}
-  else if (td84<0.06&&mid&&ring&&pinky)                              {char='F';conf=0.79;}
-  else if (idx&&!mid&&!ring&&!pinky&&Math.abs(lm[8].y-lm[5].y)<0.05){char='G';conf=0.77;}
-  else if (idx&&mid&&!ring&&!pinky&&Math.abs(lm[8].y-lm[12].y)<0.04){char='H';conf=0.76;}
-  else if (!thumb&&!idx&&!mid&&!ring&&pinky)                         {char='I';conf=0.83;}
-  else if (idx&&mid&&!ring&&!pinky&&thumb)                           {char='K';conf=0.75;}
-  else if (thumb&&idx&&!mid&&!ring&&!pinky)                          {char='L';conf=0.88;}
-  else if (!thumb&&idx&&mid&&ring&&!pinky&&lm[4].y>lm[8].y)         {char='M';conf=0.72;}
-  else if (!thumb&&idx&&mid&&!ring&&!pinky&&lm[4].y>lm[8].y)        {char='N';conf=0.73;}
-  else if (td84<0.1&&td124<0.12&&total>0)                            {char='O';conf=0.80;}
-  else if (idx&&mid&&thumb&&!ring&&!pinky&&lm[8].y>lm[5].y)         {char='P';conf=0.72;}
-  else if (idx&&!mid&&!ring&&!pinky&&lm[8].y>lm[5].y)               {char='Q';conf=0.71;}
-  else if (idx&&mid&&!ring&&!pinky&&lm[8].x>lm[12].x)               {char='R';conf=0.75;}
-  else if (total===0&&lm[4].y<lm[8].y)                               {char='S';conf=0.78;}
-  else if (!idx&&!mid&&!ring&&!pinky&&thumb)                         {char='T';conf=0.73;}
-  else if (idx&&mid&&!ring&&!pinky&&td812<0.05)                      {char='U';conf=0.82;}
-  else if (idx&&mid&&!ring&&!pinky&&td812>0.08)                      {char='V';conf=0.87;}
-  else if (idx&&mid&&ring&&!pinky&&!thumb)                           {char='W';conf=0.82;}
-  else if (!thumb&&!mid&&!ring&&!pinky&&lm[8].y>lm[6].y&&lm[8].y<lm[5].y){char='X';conf=0.71;}
-  else if (thumb&&!idx&&!mid&&!ring&&pinky)                          {char='Y';conf=0.86;}
-  else if (total===5)                                                 {char='OPEN';conf=0.95;}
-  return char ? {char,confidence:conf} : null;
+  const hs = handSize(lm) || 0.3; // normalize
+  const td84 = d3(lm[8],lm[4])/hs, td124 = d3(lm[12],lm[4])/hs;
+  const td812 = d3(lm[8],lm[12])/hs;
+  const td820 = d3(lm[8],lm[20])/hs;
+  const thumbTip = lm[4], thumbIP = lm[3], indexTip = lm[8], indexMCP = lm[5];
+  const midTip = lm[12], wrist = lm[0];
+  let char=null, conf=0.70;
+
+  // ── Unique/distinctive signs first ──
+  // L: thumb + index in L-shape (very distinctive)
+  if (thumb && idx && !mid && !ring && !pinky && d2(lm[4],lm[8])>0.15) {
+    char='L'; conf=0.92;
+  }
+  // Y: thumb + pinky out, others closed
+  else if (thumb && !idx && !mid && !ring && pinky) {
+    char='Y'; conf=0.90;
+  }
+  // I: only pinky extended
+  else if (!thumb && !idx && !mid && !ring && pinky) {
+    char='I'; conf=0.88;
+  }
+  // W: index + middle + ring spread, no pinky/thumb
+  else if (!thumb && idx && mid && ring && !pinky) {
+    char='W'; conf=0.85;
+  }
+  // B: four fingers up, thumb tucked
+  else if (!thumb && idx && mid && ring && pinky) {
+    char='B'; conf=0.88;
+  }
+  // OPEN/5: all fingers out
+  else if (total === 5) {
+    char='OPEN'; conf=0.95;
+  }
+  // F: thumb+index circle, other 3 fingers up
+  else if (td84 < 0.25 && mid && ring && pinky && !idx) {
+    char='F'; conf=0.83;
+  }
+  // D: index up, others form circle with thumb
+  else if (idx && !mid && !ring && !pinky && td124 < 0.5 && fingerExtended(lm,1)) {
+    char='D'; conf=0.82;
+  }
+  // ── Fist variants (A, E, S, T) ──
+  else if (total === 0) {
+    // S: fist, thumb over fingers (thumb in front of index)
+    if (lm[4].y < lm[8].y && lm[4].z < lm[8].z) { char='S'; conf=0.80; }
+    // A: fist, thumb beside index
+    else if ((isRightHand(lm) ? lm[4].x > lm[3].x : lm[4].x < lm[3].x)) { char='A'; conf=0.82; }
+    // E: fingers curled, thumb tucked under
+    else { char='E'; conf=0.76; }
+  }
+  // ── Two-finger signs ──
+  // V: index + middle spread apart (peace sign)
+  else if (idx && mid && !ring && !pinky && !thumb && td812 > 0.3) {
+    char='V'; conf=0.88;
+  }
+  // U: index + middle together pointing up
+  else if (idx && mid && !ring && !pinky && !thumb && td812 < 0.2) {
+    char='U'; conf=0.85;
+  }
+  // R: index crossed over middle
+  else if (idx && mid && !ring && !pinky && lm[8].x !== lm[12].x && td812 < 0.15) {
+    char='R'; conf=0.78;
+  }
+  // K: index + middle up, thumb between them
+  else if (idx && mid && !ring && !pinky && thumb) {
+    char='K'; conf=0.78;
+  }
+  // H: index + middle pointing sideways (horizontal)
+  else if (idx && mid && !ring && !pinky && Math.abs(lm[8].y-lm[12].y)<0.04 && Math.abs(lm[8].y-lm[5].y)<0.08) {
+    char='H'; conf=0.79;
+  }
+  // N: thumb under 2 fingers
+  else if (!thumb && idx && mid && !ring && !pinky && lm[4].y > lm[8].y) {
+    char='N'; conf=0.76;
+  }
+  // ── Single index finger signs ──
+  // G: index + thumb pointing sideways
+  else if (idx && !mid && !ring && !pinky && Math.abs(lm[8].y-lm[5].y)<0.06) {
+    char='G'; conf=0.80;
+  }
+  // Q: like G but pointing down
+  else if (idx && !mid && !ring && !pinky && lm[8].y > lm[5].y && lm[8].y > lm[6].y) {
+    char='Q'; conf=0.74;
+  }
+  // X: index finger hooked/bent
+  else if (!thumb && !mid && !ring && !pinky && lm[8].y > lm[6].y && lm[8].y < lm[5].y) {
+    char='X'; conf=0.74;
+  }
+  // ── Curved/circle shapes ──
+  // O: all fingertips touch thumb (circle shape)
+  else if (td84 < 0.4 && td124 < 0.5 && total > 0 && total < 4) {
+    char='O'; conf=0.80;
+  }
+  // C: curved hand
+  else if (td84 < 0.7 && total < 5 && total > 0 && !thumb) {
+    char='C'; conf=0.76;
+  }
+  // ── Three-finger signs ──
+  // M: thumb under 3 fingers
+  else if (!thumb && idx && mid && ring && !pinky && lm[4].y > lm[8].y) {
+    char='M'; conf=0.75;
+  }
+  // P: like K but pointing down
+  else if (idx && mid && thumb && !ring && !pinky && lm[8].y > lm[5].y) {
+    char='P'; conf=0.74;
+  }
+  // T: thumb between index and middle (fist with thumb peeking)
+  else if (!idx && !mid && !ring && !pinky && thumb) {
+    char='T'; conf=0.75;
+  }
+
+  return char ? {char, confidence: conf} : null;
 }
+
 function classifyNumber(lm) {
   const fs=fingerState(lm),[thumb,idx,mid,ring,pinky]=fs,total=fs.reduce((a,b)=>a+b,0);
-  if (total===0) return {char:'0',confidence:0.85};
-  if (total===1&&idx) return {char:'1',confidence:0.88};
-  if (idx&&mid&&!ring&&!pinky&&!thumb) return {char:'2',confidence:0.85};
-  if (idx&&mid&&ring&&!pinky) return {char:'3',confidence:0.82};
-  if (idx&&mid&&ring&&pinky&&!thumb) return {char:'4',confidence:0.84};
-  if (total===5) return {char:'5',confidence:0.90};
-  if (thumb&&pinky&&!idx&&!mid&&!ring) return {char:'6',confidence:0.83};
-  if (thumb&&idx&&mid&&!ring&&!pinky) return {char:'7',confidence:0.78};
-  if (thumb&&idx&&mid&&ring&&!pinky) return {char:'8',confidence:0.77};
-  if (thumb&&!idx&&!mid&&!ring&&!pinky) return {char:'9',confidence:0.80};
+  if (total===0) return {char:'0',confidence:0.88};
+  if (total===1&&idx) return {char:'1',confidence:0.90};
+  if (idx&&mid&&!ring&&!pinky&&!thumb) return {char:'2',confidence:0.88};
+  if (idx&&mid&&ring&&!pinky&&!thumb) return {char:'3',confidence:0.85};
+  if (idx&&mid&&ring&&pinky&&!thumb) return {char:'4',confidence:0.86};
+  if (total===5) return {char:'5',confidence:0.92};
+  if (thumb&&pinky&&!idx&&!mid&&!ring) return {char:'6',confidence:0.85};
+  if (thumb&&idx&&mid&&!ring&&!pinky) return {char:'7',confidence:0.80};
+  if (thumb&&idx&&mid&&ring&&!pinky) return {char:'8',confidence:0.80};
+  if (thumb&&!idx&&!mid&&!ring&&!pinky) return {char:'9',confidence:0.82};
   return null;
 }
+
 function classifyWord(lm) {
   const fs=fingerState(lm),[thumb,idx,mid,ring,pinky]=fs,total=fs.reduce((a,b)=>a+b,0);
-  const td84=d3(lm[8],lm[4]);
-  if (total===5) return {char:'HELLO',confidence:0.88};
-  if (!thumb&&idx&&!mid&&!ring&&pinky) return {char:'I LOVE YOU',confidence:0.91};
-  if (total===0) return {char:'NO',confidence:0.83};
-  if (thumb&&!idx&&!mid&&!ring&&!pinky) return {char:'YES',confidence:0.86};
-  if (thumb&&idx&&!mid&&!ring&&!pinky&&td84<0.06) return {char:'OK',confidence:0.85};
-  if (!thumb&&idx&&mid&&ring&&!pinky) return {char:'THANK YOU',confidence:0.80};
-  if (!thumb&&idx&&!mid&&!ring&&!pinky) return {char:'GOOD',confidence:0.79};
-  if (thumb&&pinky&&!idx&&!mid&&!ring) return {char:'CALL ME',confidence:0.84};
-  if (!thumb&&!idx&&!mid&&!ring&&pinky) return {char:'WAIT',confidence:0.77};
+  const hs = handSize(lm)||0.3;
+  const td84 = d3(lm[8],lm[4])/hs;
+  // ILY: thumb + index + pinky (iconic I Love You)
+  if (thumb&&idx&&!mid&&!ring&&pinky) return {char:'I LOVE YOU',confidence:0.93};
+  if (total===5) return {char:'HELLO',confidence:0.90};
+  if (total===0) return {char:'NO',confidence:0.85};
+  if (thumb&&!idx&&!mid&&!ring&&!pinky) return {char:'YES',confidence:0.88};
+  if (thumb&&pinky&&!idx&&!mid&&!ring) return {char:'CALL ME',confidence:0.86};
+  if (thumb&&idx&&!mid&&!ring&&!pinky&&td84<0.25) return {char:'OK',confidence:0.85};
+  if (!thumb&&idx&&mid&&ring&&!pinky) return {char:'THANK YOU',confidence:0.82};
+  if (!thumb&&idx&&!mid&&!ring&&!pinky) return {char:'GOOD',confidence:0.80};
+  if (!thumb&&!idx&&!mid&&!ring&&pinky) return {char:'WAIT',confidence:0.79};
+  if (!thumb&&idx&&mid&&ring&&pinky) return {char:'STOP',confidence:0.82};
   return null;
 }
 
