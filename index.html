@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SignAI — Real-time Sign Language Interpreter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #060608;
+    --bg2:      #0d0d12;
+    --bg3:      #14141c;
+    --bg4:      #1c1c28;
+    --bg5:      #242434;
+    --accent:   #00e5ff;
+    --accent2:  #7b61ff;
+    --accent3:  #ff4d6d;
+    --green:    #00ffa3;
+    --amber:    #ffbe0b;
+    --text:     #e8e8f0;
+    --text2:    #8888a8;
+    --text3:    #3d3d58;
+    --border:   rgba(0,229,255,0.12);
+    --border2:  rgba(0,229,255,0.06);
+    --glow-c:   rgba(0,229,255,0.15);
+    --glow-p:   rgba(123,97,255,0.2);
+  }
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Space Grotesk', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .orb {
+    position: fixed; border-radius: 50%; filter: blur(90px);
+    pointer-events: none; z-index: 0; opacity: 0.2;
+  }
+  .orb-1 { width: 500px; height: 500px; background: var(--accent2); top: -200px; left: -150px; animation: o1 25s ease-in-out infinite alternate; }
+  .orb-2 { width: 400px; height: 400px; background: var(--accent); bottom: -150px; right: -100px; animation: o2 30s ease-in-out infinite alternate; }
+  @keyframes o1 { to { transform: translate(80px, 60px); } }
+  @keyframes o2 { to { transform: translate(-60px, -80px); } }
+
+  .grid-bg {
+    position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(0,229,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,229,255,0.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none; z-index: 0;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 1440px; margin: 0 auto; padding: 0 24px; }
+
+  /* HEADER */
+  header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(6,6,8,0.82); backdrop-filter: blur(24px);
+    border-bottom: 1px solid var(--border2);
+  }
+  .header-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    max-width: 1440px; margin: 0 auto; padding: 14px 24px; gap: 16px;
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-mark {
+    width: 38px; height: 38px;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+    box-shadow: 0 0 24px var(--glow-c), 0 0 50px var(--glow-p);
+    animation: logoPulse 4s ease-in-out infinite;
+  }
+  @keyframes logoPulse {
+    0%,100% { box-shadow: 0 0 24px var(--glow-c), 0 0 50px var(--glow-p); }
+    50% { box-shadow: 0 0 40px rgba(0,229,255,0.5), 0 0 80px rgba(123,97,255,0.4); }
+  }
+  .logo-name {
+    font-family: 'Bebas Neue', sans-serif; font-size: 1.7rem; letter-spacing: 0.08em;
+    background: linear-gradient(90deg, var(--text), var(--accent));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .logo-tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: var(--accent);
+    border: 1px solid rgba(0,229,255,0.3); padding: 2px 7px; border-radius: 4px;
+    background: rgba(0,229,255,0.05); letter-spacing: 0.12em;
+  }
+  .header-pills { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pill {
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--text2);
+    background: var(--bg3); border: 1px solid var(--border2); padding: 5px 12px; border-radius: 100px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); transition: all 0.3s; flex-shrink: 0; }
+  .dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 1.5s ease-in-out infinite; }
+  .dot.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .dot.ready { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* HERO */
+  .hero { text-align: center; padding: 52px 0 36px; }
+  .hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; letter-spacing: 0.15em;
+    color: var(--accent); background: rgba(0,229,255,0.05); border: 1px solid rgba(0,229,255,0.2);
+    padding: 6px 16px; border-radius: 100px; margin-bottom: 24px; text-transform: uppercase;
+  }
+  .hero-eyebrow::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: blink 2s ease-in-out infinite;
+  }
+  .hero-title {
+    font-family: 'Bebas Neue', sans-serif; font-size: clamp(3rem, 7vw, 5.5rem);
+    line-height: 0.95; letter-spacing: 0.04em; color: var(--text); margin-bottom: 20px;
+  }
+  .hero-title .hl {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .hero-sub { font-size: 1rem; color: var(--text2); max-width: 520px; margin: 0 auto 32px; line-height: 1.75; font-weight: 300; }
+
+  /* LAYOUT */
+  .layout { display: grid; grid-template-columns: 1fr 360px; gap: 20px; padding-bottom: 60px; }
+  @media (max-width: 1024px) { .layout { grid-template-columns: 1fr; } }
+  .left-col { display: flex; flex-direction: column; gap: 20px; }
+  .right-col { display: flex; flex-direction: column; gap: 16px; }
+
+  /* CARDS */
+  .card {
+    background: rgba(13,13,18,0.9); border: 1px solid var(--border); border-radius: 16px;
+    overflow: hidden; backdrop-filter: blur(12px); transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .card:hover { border-color: rgba(0,229,255,0.2); box-shadow: 0 0 40px rgba(0,229,255,0.04); }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--border2);
+  }
+  .card-label {
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; font-weight: 700;
+    color: var(--text2); letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .icon-box {
+    width: 28px; height: 28px; border-radius: 7px; background: rgba(0,229,255,0.08);
+    border: 1px solid var(--border2); display: flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+  .tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text3);
+    background: var(--bg3); border: 1px solid var(--border2); padding: 2px 8px; border-radius: 4px;
+  }
+
+  /* CAMERA */
+  .cam-wrap { position: relative; background: #03030a; aspect-ratio: 16/10; overflow: hidden; }
+  #videoEl { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
+  #outputCanvas { position: absolute; inset: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+
+  .cam-overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px; background: rgba(3,3,10,0.96); transition: opacity 0.5s, visibility 0.5s;
+  }
+  .cam-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  .cam-icon-ring {
+    width: 72px; height: 72px; border-radius: 50%; border: 1px solid var(--border);
+    background: rgba(0,229,255,0.05); display: flex; align-items: center; justify-content: center;
+    font-size: 32px; animation: float 3s ease-in-out infinite; position: relative;
+  }
+  .cam-icon-ring::after {
+    content: ''; position: absolute; inset: -8px; border-radius: 50%;
+    border: 1px solid rgba(0,229,255,0.1); animation: ripple 3s ease-in-out infinite;
+  }
+  @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+  @keyframes ripple { 0%,100%{transform:scale(1);opacity:0.5} 50%{transform:scale(1.15);opacity:0.1} }
+  .cam-overlay h3 { font-size: 1rem; font-weight: 600; color: var(--text); }
+  .cam-overlay p { font-size: 0.8rem; color: var(--text3); font-family: 'JetBrains Mono', monospace; }
+
+  .hud-badge {
+    position: absolute; font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+    background: rgba(3,3,10,0.85); border: 1px solid var(--border); border-radius: 100px;
+    padding: 4px 12px; backdrop-filter: blur(8px); transition: all 0.3s;
+    display: flex; align-items: center; gap: 6px; color: var(--text2);
+  }
+  .hud-tl { top: 12px; left: 12px; }
+  .hud-tr { top: 12px; right: 12px; }
+  .hud-badge.detected { border-color: rgba(0,255,163,0.4); color: var(--green); box-shadow: 0 0 14px rgba(0,255,163,0.1); }
+
+  .gesture-display {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    font-family: 'Bebas Neue', sans-serif; font-size: 2.8rem; letter-spacing: 0.06em;
+    color: var(--accent); background: rgba(3,3,10,0.9); border: 1px solid var(--border);
+    border-radius: 12px; padding: 4px 24px; backdrop-filter: blur(10px);
+    opacity: 0; white-space: nowrap; transition: opacity 0.2s, box-shadow 0.2s, transform 0.15s;
+  }
+  .gesture-display.show { opacity: 1; box-shadow: 0 0 30px var(--glow-c); }
+
+  /* CONTROLS */
+  .controls-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 14px 18px; border-bottom: 1px solid var(--border2);
+  }
+  .mode-group {
+    display: flex; background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 3px; gap: 3px; margin-left: auto;
+  }
+  .mode-btn {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; padding: 5px 14px;
+    border-radius: 5px; background: transparent; border: none; color: var(--text3);
+    cursor: pointer; transition: all 0.2s; letter-spacing: 0.04em;
+  }
+  .mode-btn.active { background: var(--accent); color: #000; font-weight: 700; box-shadow: 0 2px 10px var(--glow-c); }
+
+  /* BUTTONS */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+    border-radius: 8px; border: 1px solid var(--border); background: var(--bg3);
+    color: var(--text2); font-family: 'Space Grotesk', sans-serif; font-size: 0.8rem;
+    font-weight: 500; cursor: pointer; transition: all 0.18s; white-space: nowrap; user-select: none;
+  }
+  .btn:hover { background: var(--bg4); color: var(--text); border-color: rgba(0,229,255,0.25); }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); border-color: transparent; color: #000; font-weight: 700; box-shadow: 0 4px 20px var(--glow-c); }
+  .btn-primary:hover { background: #33ecff; box-shadow: 0 4px 30px rgba(0,229,255,0.5); color: #000; }
+  .btn-danger { border-color: rgba(255,77,109,0.3); color: var(--accent3); }
+  .btn-danger:hover { background: rgba(255,77,109,0.08); }
+  .btn-success { border-color: rgba(0,255,163,0.3); color: var(--green); }
+  .btn-success.on { background: rgba(0,255,163,0.08); }
+  .btn-purple { border-color: rgba(123,97,255,0.3); color: #a78bfa; }
+  .btn-purple:hover { background: rgba(123,97,255,0.08); }
+
+  /* OUTPUT */
+  .output-area { padding: 18px; }
+  .output-label { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text3); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 8px; }
+  .output-box {
+    min-height: 90px; background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px;
+    padding: 14px 16px; font-family: 'JetBrains Mono', monospace; font-size: 1.5rem; font-weight: 500;
+    color: var(--accent); letter-spacing: 0.06em; word-break: break-all; line-height: 1.5; transition: border-color 0.3s;
+  }
+  .cursor {
+    display: inline-block; width: 2px; height: 1.1em; background: var(--accent);
+    vertical-align: middle; margin-left: 2px; animation: blink 1s step-end infinite;
+  }
+  .output-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+  /* AI */
+  .ai-panel { padding: 16px 18px; }
+  .ai-bubble {
+    background: var(--bg2); border: 1px solid rgba(123,97,255,0.15); border-radius: 12px;
+    padding: 16px 16px 14px; font-size: 0.88rem; line-height: 1.7; color: var(--text2);
+    min-height: 80px; transition: all 0.3s; position: relative;
+  }
+  .ai-bubble.thinking { border-color: rgba(123,97,255,0.35); box-shadow: 0 0 20px rgba(123,97,255,0.1); }
+  .ai-label {
+    display: inline-block; margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    border-radius: 5px; padding: 2px 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: #000; font-weight: 700; letter-spacing: 0.08em;
+  }
+  .thinking-dots { display: flex; align-items: center; gap: 5px; height: 20px; }
+  .thinking-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent2); animation: tdB 1.2s ease-in-out infinite; }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes tdB { 0%,60%,100%{transform:translateY(0);opacity:0.3} 30%{transform:translateY(-7px);opacity:1} }
+
+  /* STATS */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); padding: 14px 18px; gap: 10px; }
+  .stat { background: var(--bg3); border: 1px solid var(--border2); border-radius: 10px; padding: 12px; text-align: center; transition: border-color 0.3s; }
+  .stat:hover { border-color: var(--border); }
+  .stat-num { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; letter-spacing: 0.06em; color: var(--accent); display: block; line-height: 1; margin-bottom: 4px; }
+  .stat-key { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: var(--text3); letter-spacing: 0.12em; text-transform: uppercase; }
+
+  /* HISTORY */
+  .hist-list { padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+  .hist-item {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 8px 12px;
+    animation: slideIn 0.25s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
+  .hist-char { font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; letter-spacing: 0.06em; color: var(--accent2); }
+  .hist-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .hist-conf { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--green); }
+  .hist-time { font-size: 0.6rem; color: var(--text3); font-family: 'JetBrains Mono', monospace; }
+
+  /* TTS */
+  .tts-section { padding: 14px 18px; }
+  .slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .slider-lbl { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--text3); width: 52px; flex-shrink: 0; }
+  .slider-val { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--accent); width: 34px; text-align: right; }
+  input[type=range] { flex: 1; -webkit-appearance: none; height: 3px; border-radius: 2px; background: var(--bg5); outline: none; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--glow-c); cursor: pointer; }
+  select { width: 100%; background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); border-radius: 8px; padding: 7px 10px; font-size: 0.78rem; font-family: 'Space Grotesk', sans-serif; outline: none; cursor: pointer; margin-top: 6px; }
+
+  /* STT */
+  .stt-section { padding: 14px 18px; }
+  .stt-box {
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: 10px;
+    padding: 12px 14px; font-size: 0.85rem; color: var(--text2); min-height: 64px; font-style: italic; transition: all 0.3s; line-height: 1.6;
+  }
+  .stt-box.mic-on { border-color: rgba(255,190,11,0.35); box-shadow: 0 0 16px rgba(255,190,11,0.08); color: var(--amber); font-style: normal; }
+
+  /* ALPHA GRID */
+  .alpha-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding: 12px 16px; }
+  .alpha-cell {
+    aspect-ratio: 1; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Bebas Neue', sans-serif; font-size: 1rem; color: var(--text3);
+    transition: all 0.2s;
+  }
+  .alpha-cell:hover { color: var(--text2); background: var(--bg4); }
+  .alpha-cell.lit { background: rgba(0,229,255,0.1); border-color: rgba(0,229,255,0.35); color: var(--accent); box-shadow: 0 0 12px rgba(0,229,255,0.15); transform: scale(1.06); }
+
+  /* VIDEO CALL */
+  .vcall-section { padding: 14px 18px; }
+  .mini-cams { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+  .mini-cam {
+    aspect-ratio: 4/3; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; flex-direction: column;
+    gap: 6px; position: relative; overflow: hidden;
+  }
+  .mini-cam .avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--bg5); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+  .mini-cam .name-tag { position: absolute; bottom: 6px; left: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: var(--text3); background: rgba(3,3,10,0.8); padding: 2px 6px; border-radius: 4px; }
+  .call-btns { display: flex; gap: 8px; }
+  .call-btns .btn { flex: 1; justify-content: center; }
+  .sign-overlay { margin-top: 10px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 8px 12px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text3); }
+  .sign-overlay span { color: var(--accent2); }
+
+  /* TOAST */
+  #toastWrap { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .toast { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; font-size: 0.8rem; color: var(--text2); backdrop-filter: blur(14px); animation: toastIn 0.3s ease; max-width: 300px; line-height: 1.5; }
+  @keyframes toastIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--bg5); border-radius: 2px; }
+
+  /* ASL GUIDE */
+  .guide-section { padding: 0; }
+  .guide-images { display: flex; flex-direction: column; gap: 2px; }
+  .guide-images img { width: 100%; border-radius: 8px; display: block; transition: transform 0.3s; cursor: pointer; }
+  .guide-images img:hover { transform: scale(1.02); }
+  .guide-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 12px 14px; max-height: 360px; overflow-y: auto; }
+  .guide-card {
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px;
+    padding: 8px 10px; transition: all 0.2s; cursor: default;
+  }
+  .guide-card:hover { border-color: rgba(0,229,255,0.3); background: var(--bg4); transform: translateY(-1px); }
+  .guide-letter { font-family: 'Bebas Neue', sans-serif; font-size: 1.3rem; color: var(--accent); letter-spacing: 0.04em; line-height: 1; }
+  .guide-desc { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: var(--text3); line-height: 1.4; margin-top: 3px; }
+  .guide-tab-bar { display: flex; border-bottom: 1px solid var(--border2); }
+  .guide-tab { flex: 1; text-align: center; padding: 8px 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text3); background: none; border: none; cursor: pointer; transition: all 0.2s; letter-spacing: 0.06em; }
+  .guide-tab.active { color: var(--accent); border-bottom: 2px solid var(--accent); background: rgba(0,229,255,0.03); }
+  .guide-tab:hover { color: var(--text2); }
+  .guide-pane { display: none; }
+  .guide-pane.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="grid-bg"></div>
+
+<!-- HEADER -->
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-mark">✋</div>
+      <span class="logo-name">SignAI</span>
+      <span class="logo-tag">BETA v1.0</span>
+    </div>
+    <div class="header-pills">
+      <div class="pill"><div class="dot" id="camDot"></div><span id="camTxt">Camera Off</span></div>
+      <div class="pill"><div class="dot ready" id="mpDot"></div><span>MediaPipe</span></div>
+      <div class="pill"><div class="dot" style="background:var(--accent2)"></div><span id="fpsLabel">0 FPS</span></div>
+    </div>
+  </div>
+</header>
+
+<!-- HERO -->
+<div class="wrap">
+  <div class="hero">
+    <div class="hero-eyebrow">Real-time ASL Recognition · No Backend Required · Runs in Browser</div>
+    <h1 class="hero-title">Sign Language<br><span class="hl">Interpreter</span></h1>
+    <p class="hero-sub">Point your webcam, perform ASL hand signs, and watch real-time AI recognition translate your gestures into text and speech.</p>
+  </div>
+
+  <div class="layout">
+    <!-- LEFT COL -->
+    <div class="left-col">
+
+      <!-- Camera -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-label"><div class="icon-box">📷</div>Live Camera Feed</div>
+          <div class="mode-group">
+            <button class="mode-btn active" id="modeAlpha" onclick="setMode('alphabet')">ASL Alpha</button>
+            <button class="mode-btn" id="modeWords" onclick="setMode('words')">Words</button>
+            <button class="mode-btn" id="modeNums" onclick="setMode('numbers')">Numbers</button>
+          </div>
+        </div>
+        <div class="cam-wrap">
+          <video id="videoEl" autoplay playsinline muted></video>
+          <canvas id="outputCanvas"></canvas>
+          <div class="cam-overlay" id="camOverlay">
+            <div class="cam-icon-ring">📷</div>
+            <h3>Start your camera</h3>
+            <p>Webcam access required · Runs entirely in browser</p>
+          </div>
+          <div class="hud-badge hud-tl" id="handBadge">
+            <div class="dot" id="handDot"></div>
+            <span id="handTxt">No Hand</span>
+          </div>
+          <div class="hud-badge hud-tr" id="confBadge" style="display:none">
+            <span id="confVal">—</span>&nbsp;conf
+          </div>
+          <div class="gesture-display" id="gestureLive"></div>
+        </div>
+        <div class="controls-bar">
+          <button class="btn btn-primary" id="startBtn" onclick="startCamera()">▶ Start Camera</button>
+          <button class="btn btn-danger" id="stopBtn" onclick="stopCamera()" style="display:none">⏹ Stop</button>
+          <button class="btn btn-success on" id="ttsBtn" onclick="toggleTTS()">🔊 TTS</button>
+          <button class="btn" onclick="clearOutput()">🗑 Clear</button>
+          <button class="btn" onclick="copyOutput()">📋 Copy</button>
+          <button class="btn" id="sttBtn" onclick="toggleSTT()">🎤 Listen</button>
+        </div>
+        <div class="output-area">
+          <div class="output-label">Detected Text Output</div>
+          <div class="output-box" id="outputBox"><span class="cursor"></span></div>
+          <div class="output-actions">
+            <button class="btn btn-success" onclick="speakOutput()">🔊 Speak</button>
+            <button class="btn btn-purple" onclick="interpretWithAI()">✨ AI Interpret</button>
+            <button class="btn" onclick="addSpace()">⎵ Space</button>
+            <button class="btn btn-danger" onclick="doBackspace()">⌫ Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-label"><div class="icon-box">✨</div>AI Interpretation</div>
+          <span class="tag">Local AI</span>
+        </div>
+        <div class="ai-panel">
+          <div class="ai-bubble" id="aiBubble">
+            <div class="ai-label">AI</div>
+            Detected gestures will be interpreted here. Sign something and click <strong>✨ AI Interpret</strong>.
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-label"><div class="icon-box">📊</div>Session Statistics</div>
+        </div>
+        <div class="stats-row">
+          <div class="stat"><span class="stat-num" id="sGestures">0</span><div class="stat-key">Gestures</div></div>
+          <div class="stat"><span class="stat-num" id="sWords">0</span><div class="stat-key">Words</div></div>
+          <div class="stat"><span class="stat-num" id="sConf">—</span><div class="stat-key">Avg Conf</div></div>
+          <div class="stat"><span class="stat-num" id="sFPS">0</span><div class="stat-key">FPS</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT COL -->
+    <div class="right-col">
+
+      <!-- Gesture Log -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-label"><div class="icon-box">📜</div>Gesture Log</div>
+          <button class="btn" style="padding:4px 10px;font-size:0.7rem" onclick="clearHistory()">Clear</button>
+        </div>
+        <div class="hist-list" id="histList">
+          <div data-empty style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;font-family:'JetBrains Mono',monospace">No gestures yet...</div>
+        </div>
+      </div>
+
+      <!-- Voice -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-label"><div class="icon-box">🔊</div>Voice Output</div>
+        </div>
+        <div class="tts-section">
+          <div class="slider-row">
+            <span class="slider-lbl">Rate</span>
+            <input type="range" id="ttsRate" min="0.5" max="2" step="0.1" value="0.9">
+            <span class="slider-val" id="ttsRateVal">0.9</span>
+          </div>
+          <div class="slider-row">
+            <span class="slider-lbl">Pitch</span>
+            <input type="range" id="ttsPitch" min="0.5" max="2" step="0.1" value="1.0">
+            <span class="slider-val" id="ttsPitchVal">1.0</span>
+          </div>
+          <div class="slider-row">
+            <span class="slider-lbl">Volume</span>
+            <input type="range" id="ttsVol" min="0" max="1" step="0.1" value="1">
+            <span class="slider-val" id="ttsVolVal">1.0</span>
+          </div>
+          <select id="voiceSelect"></select>
+        </div>
+      </div>
+
+      <!-- STT -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-label"><div class="icon-box">🎤</div>Speech to Text</div>
+          <div class="dot" id="sttDot"></div>
+        </div>
+        <div class="stt-section">
+          <div class="stt-box" id="sttBox">Press <strong>Listen</strong> to start speech recognition...</div>
+        </div>
+      </div>
+
+      <!-- ASL Reference -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-label"><div class="icon-box">🔤</div>ASL Reference</div>
+          <span class="tag" id="currentChip">—</span>
+        </div>
+        <div class="alpha-grid" id="alphaGrid"></div>
+      </div>
+
+      <!-- Video Call -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-label"><div class="icon-box">📹</div>Video Call</div>
+          <div class="pill" style="font-size:0.65rem;padding:3px 10px">
+            <div class="dot" id="rtcDot"></div>
+            <span id="rtcTxt">Not Connected</span>
+          </div>
+        </div>
+        <div class="vcall-section">
+          <div style="margin-bottom:10px">
+            <div class="output-label">Room ID</div>
+            <div style="display:flex;gap:6px">
+              <input type="text" id="roomIdInput" value="signai-room-1" style="flex:1;background:var(--bg3);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:7px 10px;font-size:0.78rem;font-family:'JetBrains Mono',monospace;outline:none">
+              <button class="btn" onclick="copyRoomLink()" title="Copy room link">🔗</button>
+            </div>
+          </div>
+          <div class="mini-cams">
+            <div class="mini-cam" id="localCamBox">
+              <video id="localCallVideo" autoplay muted playsinline style="width:100%;height:100%;object-fit:cover;border-radius:7px;display:none;transform:scaleX(-1)"></video>
+              <div class="avatar" id="localAvatar">👤</div>
+              <div class="name-tag">You · Local</div>
+            </div>
+            <div class="mini-cam" id="remoteCamBox">
+              <video id="remoteCallVideo" autoplay playsinline style="width:100%;height:100%;object-fit:cover;border-radius:7px;display:none"></video>
+              <div class="avatar" id="remoteAvatar">👥</div>
+              <div class="name-tag" id="remoteNameTag">Remote · Peer</div>
+            </div>
+          </div>
+          <div class="call-btns">
+            <button class="btn btn-primary" id="startCallBtn" onclick="startCall()">📞 Start Call</button>
+            <button class="btn btn-danger" id="endCallBtn" onclick="endCall()" style="display:none">📵 End Call</button>
+            <button class="btn" id="muteMicBtn" onclick="toggleCallMic()" style="display:none">🎤</button>
+            <button class="btn" id="muteCamBtn" onclick="toggleCallCam()" style="display:none">📷</button>
+          </div>
+          <div class="sign-overlay">Sign in call: <span id="callSign">—</span> | Remote: <span id="remoteSign">—</span></div>
+        </div>
+      </div>
+
+      <!-- ASL Learning Guide -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-label"><div class="icon-box">📚</div>ASL Learning Guide</div>
+          <span class="tag">A—Z Reference</span>
+        </div>
+        <div class="guide-tab-bar">
+          <button class="guide-tab active" onclick="showGuideTab('images')">📸 Visual</button>
+          <button class="guide-tab" onclick="showGuideTab('desc')">📝 Descriptions</button>
+        </div>
+        <div class="guide-section">
+          <div class="guide-pane active" id="guideImages">
+            <div class="guide-images">
+              <img src="/images/asl_ag.png" alt="ASL Letters A-G" loading="lazy">
+              <img src="/images/asl_hn.png" alt="ASL Letters H-N" loading="lazy">
+              <img src="/images/asl_ou.png" alt="ASL Letters O-U" loading="lazy">
+              <img src="/images/asl_vz.png" alt="ASL Letters V-Z" loading="lazy">
+            </div>
+          </div>
+          <div class="guide-pane" id="guideDesc">
+            <div class="guide-grid" id="guideGrid"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="toastWrap"></div>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js" crossorigin="anonymous"></script>
+
+<script>
+// STATE
+let cameraStream = null, hands = null, mpCamera = null;
+let ttsEnabled = true, sttActive = false, recognition = null;
+let currentMode = 'alphabet', lastGesture = '', gestureHoldCount = 0;
+let lastCommitTime = 0, totalGestures = 0, totalConf = 0;
+let fpsCount = 0, lastFpsT = Date.now();
+const HOLD_THRESH = 8, COOLDOWN = 850;
+const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+let voices = [];
+
+// GRID
+function buildGrid(items) {
+  const grid = document.getElementById('alphaGrid');
+  grid.innerHTML = '';
+  items.forEach(ch => {
+    const c = document.createElement('div');
+    c.className = 'alpha-cell';
+    c.textContent = ch;
+    c.id = 'ac_' + ch;
+    grid.appendChild(c);
+  });
+}
+buildGrid(ALPHA);
+
+// SLIDERS
+['Rate','Pitch','Vol'].forEach(k => {
+  const el = document.getElementById('tts'+k);
+  const vl = document.getElementById('tts'+k+'Val');
+  el.addEventListener('input', () => vl.textContent = parseFloat(el.value).toFixed(1));
+});
+
+// VOICES
+function loadVoices() {
+  voices = window.speechSynthesis.getVoices();
+  const sel = document.getElementById('voiceSelect');
+  sel.innerHTML = '';
+  if (!voices.length) { sel.innerHTML = '<option>Default Voice</option>'; return; }
+  voices.forEach((v, i) => {
+    const o = document.createElement('option');
+    o.value = i;
+    o.textContent = v.name + ' (' + v.lang + ')';
+    sel.appendChild(o);
+  });
+}
+if (window.speechSynthesis) { window.speechSynthesis.onvoiceschanged = loadVoices; loadVoices(); }
+
+// CAMERA
+async function startCamera() {
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width:{ideal:1280}, height:{ideal:720}, facingMode:'user' }, audio: false });
+    const vid = document.getElementById('videoEl');
+    vid.srcObject = cameraStream;
+    await vid.play();
+    document.getElementById('camOverlay').classList.add('hidden');
+    document.getElementById('startBtn').style.display = 'none';
+    document.getElementById('stopBtn').style.display = 'inline-flex';
+    document.getElementById('camDot').className = 'dot live';
+    document.getElementById('camTxt').textContent = 'Live';
+    document.getElementById('mpDot').className = 'dot live';
+    initMediaPipe();
+    toast('✅ Camera started — show your hand signs!');
+  } catch(e) { toast('❌ Camera denied: ' + e.message, 'error'); }
+}
+
+function stopCamera() {
+  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+  if (mpCamera) { mpCamera.stop(); mpCamera = null; }
+  document.getElementById('videoEl').srcObject = null;
+  document.getElementById('camOverlay').classList.remove('hidden');
+  document.getElementById('startBtn').style.display = 'inline-flex';
+  document.getElementById('stopBtn').style.display = 'none';
+  document.getElementById('camDot').className = 'dot';
+  document.getElementById('camTxt').textContent = 'Camera Off';
+  document.getElementById('mpDot').className = 'dot ready';
+  document.getElementById('handDot').className = 'dot';
+  document.getElementById('handTxt').textContent = 'No Hand';
+  document.getElementById('handBadge').classList.remove('detected');
+  document.getElementById('gestureLive').classList.remove('show');
+  document.getElementById('confBadge').style.display = 'none';
+}
+
+// MEDIAPIPE
+function initMediaPipe() {
+  const vid = document.getElementById('videoEl');
+  const canvas = document.getElementById('outputCanvas');
+  const ctx = canvas.getContext('2d');
+  hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+  hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.6 });
+  hands.onResults(results => {
+    canvas.width  = vid.videoWidth  || 640;
+    canvas.height = vid.videoHeight || 480;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    fpsCount++;
+    const now = Date.now();
+    if (now - lastFpsT >= 1000) {
+      document.getElementById('sFPS').textContent = fpsCount;
+      document.getElementById('fpsLabel').textContent = fpsCount + ' FPS';
+      fpsCount = 0; lastFpsT = now;
+    }
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      document.getElementById('handTxt').textContent = results.multiHandLandmarks.length + ' Hand(s)';
+      document.getElementById('handDot').className = 'dot live';
+      document.getElementById('handBadge').classList.add('detected');
+      results.multiHandLandmarks.forEach(lm => {
+        drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: 'rgba(0,229,255,0.55)', lineWidth: 2 });
+        drawLandmarks(ctx, lm, { color: 'rgba(0,255,163,0.85)', lineWidth: 1, radius: 4 });
+        const g = classifyGesture(lm, currentMode);
+        if (g) processGesture(g.char, g.confidence);
+      });
+    } else {
+      document.getElementById('handTxt').textContent = 'No Hand';
+      document.getElementById('handDot').className = 'dot';
+      document.getElementById('handBadge').classList.remove('detected');
+      document.getElementById('gestureLive').classList.remove('show');
+      document.getElementById('confBadge').style.display = 'none';
+      gestureHoldCount = 0;
+    }
+  });
+  mpCamera = new Camera(vid, { onFrame: async () => { await hands.send({ image: vid }); }, width: 1280, height: 720 });
+  mpCamera.start();
+}
+
+// CLASSIFICATION
+const TIP_IDS = [4, 8, 12, 16, 20], PIP_IDS = [3, 7, 11, 15, 19];
+function fingerState(lm) {
+  const r = [];
+  r.push(lm[4].x < lm[3].x ? 1 : 0);
+  for (let i = 1; i <= 4; i++) r.push(lm[TIP_IDS[i]].y < lm[PIP_IDS[i]].y ? 1 : 0);
+  return r;
+}
+function d3(a, b) { return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2); }
+function classifyGesture(lm, mode) {
+  if (mode === 'numbers') return classifyNumber(lm);
+  if (mode === 'words') return classifyWord(lm);
+  return classifyASL(lm);
+}
+function classifyASL(lm) {
+  const fs = fingerState(lm), [thumb,idx,mid,ring,pinky] = fs;
+  const total = fs.reduce((a,b)=>a+b,0);
+  const td84=d3(lm[8],lm[4]), td124=d3(lm[12],lm[4]), td812=d3(lm[8],lm[12]);
+  let char=null, conf=0.75;
+  if (total===0&&lm[4].x>lm[3].x)                                  {char='A';conf=0.82;}
+  else if (!thumb&&idx&&mid&&ring&&pinky)                            {char='B';conf=0.85;}
+  else if (td84<0.18&&total<5&&total>0&&!thumb)                     {char='C';conf=0.76;}
+  else if (idx&&!mid&&!ring&&!pinky&&td124<0.12)                    {char='D';conf=0.78;}
+  else if (total===0&&td84>0.08)                                     {char='E';conf=0.74;}
+  else if (td84<0.06&&mid&&ring&&pinky)                              {char='F';conf=0.79;}
+  else if (idx&&!mid&&!ring&&!pinky&&Math.abs(lm[8].y-lm[5].y)<0.05){char='G';conf=0.77;}
+  else if (idx&&mid&&!ring&&!pinky&&Math.abs(lm[8].y-lm[12].y)<0.04){char='H';conf=0.76;}
+  else if (!thumb&&!idx&&!mid&&!ring&&pinky)                         {char='I';conf=0.83;}
+  else if (idx&&mid&&!ring&&!pinky&&thumb)                           {char='K';conf=0.75;}
+  else if (thumb&&idx&&!mid&&!ring&&!pinky)                          {char='L';conf=0.88;}
+  else if (!thumb&&idx&&mid&&ring&&!pinky&&lm[4].y>lm[8].y)         {char='M';conf=0.72;}
+  else if (!thumb&&idx&&mid&&!ring&&!pinky&&lm[4].y>lm[8].y)        {char='N';conf=0.73;}
+  else if (td84<0.1&&td124<0.12&&total>0)                            {char='O';conf=0.80;}
+  else if (idx&&mid&&thumb&&!ring&&!pinky&&lm[8].y>lm[5].y)         {char='P';conf=0.72;}
+  else if (idx&&!mid&&!ring&&!pinky&&lm[8].y>lm[5].y)               {char='Q';conf=0.71;}
+  else if (idx&&mid&&!ring&&!pinky&&lm[8].x>lm[12].x)               {char='R';conf=0.75;}
+  else if (total===0&&lm[4].y<lm[8].y)                               {char='S';conf=0.78;}
+  else if (!idx&&!mid&&!ring&&!pinky&&thumb)                         {char='T';conf=0.73;}
+  else if (idx&&mid&&!ring&&!pinky&&td812<0.05)                      {char='U';conf=0.82;}
+  else if (idx&&mid&&!ring&&!pinky&&td812>0.08)                      {char='V';conf=0.87;}
+  else if (idx&&mid&&ring&&!pinky&&!thumb)                           {char='W';conf=0.82;}
+  else if (!thumb&&!mid&&!ring&&!pinky&&lm[8].y>lm[6].y&&lm[8].y<lm[5].y){char='X';conf=0.71;}
+  else if (thumb&&!idx&&!mid&&!ring&&pinky)                          {char='Y';conf=0.86;}
+  else if (total===5)                                                 {char='OPEN';conf=0.95;}
+  return char ? {char,confidence:conf} : null;
+}
+function classifyNumber(lm) {
+  const fs=fingerState(lm),[thumb,idx,mid,ring,pinky]=fs,total=fs.reduce((a,b)=>a+b,0);
+  if (total===0) return {char:'0',confidence:0.85};
+  if (total===1&&idx) return {char:'1',confidence:0.88};
+  if (idx&&mid&&!ring&&!pinky&&!thumb) return {char:'2',confidence:0.85};
+  if (idx&&mid&&ring&&!pinky) return {char:'3',confidence:0.82};
+  if (idx&&mid&&ring&&pinky&&!thumb) return {char:'4',confidence:0.84};
+  if (total===5) return {char:'5',confidence:0.90};
+  if (thumb&&pinky&&!idx&&!mid&&!ring) return {char:'6',confidence:0.83};
+  if (thumb&&idx&&mid&&!ring&&!pinky) return {char:'7',confidence:0.78};
+  if (thumb&&idx&&mid&&ring&&!pinky) return {char:'8',confidence:0.77};
+  if (thumb&&!idx&&!mid&&!ring&&!pinky) return {char:'9',confidence:0.80};
+  return null;
+}
+function classifyWord(lm) {
+  const fs=fingerState(lm),[thumb,idx,mid,ring,pinky]=fs,total=fs.reduce((a,b)=>a+b,0);
+  const td84=d3(lm[8],lm[4]);
+  if (total===5) return {char:'HELLO',confidence:0.88};
+  if (!thumb&&idx&&!mid&&!ring&&pinky) return {char:'I LOVE YOU',confidence:0.91};
+  if (total===0) return {char:'NO',confidence:0.83};
+  if (thumb&&!idx&&!mid&&!ring&&!pinky) return {char:'YES',confidence:0.86};
+  if (thumb&&idx&&!mid&&!ring&&!pinky&&td84<0.06) return {char:'OK',confidence:0.85};
+  if (!thumb&&idx&&mid&&ring&&!pinky) return {char:'THANK YOU',confidence:0.80};
+  if (!thumb&&idx&&!mid&&!ring&&!pinky) return {char:'GOOD',confidence:0.79};
+  if (thumb&&pinky&&!idx&&!mid&&!ring) return {char:'CALL ME',confidence:0.84};
+  if (!thumb&&!idx&&!mid&&!ring&&pinky) return {char:'WAIT',confidence:0.77};
+  return null;
+}
+
+// GESTURE PIPELINE
+function processGesture(char, confidence) {
+  const gl = document.getElementById('gestureLive');
+  gl.textContent = char;
+  gl.classList.add('show');
+  document.getElementById('confBadge').style.display = 'flex';
+  document.getElementById('confVal').textContent = Math.round(confidence*100)+'%';
+  highlightCell(char);
+  document.getElementById('callSign').textContent = char;
+  broadcastSign(char);
+  const now = Date.now();
+  if (char === lastGesture) { gestureHoldCount++; } else { gestureHoldCount = 1; lastGesture = char; }
+  if (gestureHoldCount >= HOLD_THRESH && (now - lastCommitTime) > COOLDOWN) {
+    commitGesture(char, confidence); lastCommitTime = now; gestureHoldCount = 0;
+  }
+}
+function commitGesture(char, confidence) {
+  if (char === 'OPEN') return;
+  const box = document.getElementById('outputBox');
+  const text = box.textContent.replace('|','');
+  if (currentMode === 'alphabet') {
+    box.innerHTML = text + char + '<span class="cursor"></span>';
+  } else {
+    box.innerHTML = text + (text.trim().length?' ':'') + char + '<span class="cursor"></span>';
+  }
+  totalGestures++; totalConf += confidence;
+  document.getElementById('sGestures').textContent = totalGestures;
+  document.getElementById('sWords').textContent = box.textContent.trim().split(/\s+/).filter(Boolean).length;
+  document.getElementById('sConf').textContent = Math.round((totalConf/totalGestures)*100)+'%';
+  addHistory(char, confidence);
+  flashGesture();
+  if (ttsEnabled) speak(char);
+}
+function addHistory(char, confidence) {
+  const list = document.getElementById('histList');
+  const empty = list.querySelector('[data-empty]');
+  if (empty) empty.remove();
+  const item = document.createElement('div');
+  item.className = 'hist-item';
+  const now = new Date();
+  const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  item.innerHTML = `<span class="hist-char">${char}</span><div class="hist-right"><span class="hist-conf">${Math.round(confidence*100)}%</span><span class="hist-time">${ts}</span></div>`;
+  list.insertBefore(item, list.firstChild);
+  if (list.children.length > 25) list.removeChild(list.lastChild);
+}
+function flashGesture() {
+  const gl = document.getElementById('gestureLive');
+  gl.style.transform = 'translateX(-50%) scale(1.15)';
+  gl.style.boxShadow = '0 0 50px rgba(0,229,255,0.5)';
+  setTimeout(() => { gl.style.transform='translateX(-50%) scale(1)'; gl.style.boxShadow='0 0 30px rgba(0,229,255,0.2)'; }, 150);
+}
+function highlightCell(char) {
+  document.querySelectorAll('.alpha-cell').forEach(c => c.classList.remove('lit'));
+  const cell = document.getElementById('ac_' + char);
+  if (cell) { cell.classList.add('lit'); document.getElementById('currentChip').textContent = char; }
+}
+
+// MODE
+function setMode(mode) {
+  currentMode = mode;
+  ['Alpha','Words','Nums'].forEach(k => document.getElementById('mode'+k).classList.remove('active'));
+  if (mode==='alphabet') { document.getElementById('modeAlpha').classList.add('active'); buildGrid(ALPHA); }
+  else if (mode==='words') { document.getElementById('modeWords').classList.add('active'); buildGrid(['HELLO','I LOVE YOU','YES','NO','OK','THANK YOU','GOOD','CALL ME','WAIT']); }
+  else { document.getElementById('modeNums').classList.add('active'); buildGrid('0123456789'.split('')); }
+  toast('Mode: ' + mode.toUpperCase());
+}
+
+// TTS
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = parseFloat(document.getElementById('ttsRate').value);
+  u.pitch = parseFloat(document.getElementById('ttsPitch').value);
+  u.volume = parseFloat(document.getElementById('ttsVol').value);
+  const vi = parseInt(document.getElementById('voiceSelect').value);
+  if (voices[vi]) u.voice = voices[vi];
+  window.speechSynthesis.speak(u);
+}
+function toggleTTS() {
+  ttsEnabled = !ttsEnabled;
+  const btn = document.getElementById('ttsBtn');
+  btn.textContent = ttsEnabled ? '🔊 TTS' : '🔇 TTS';
+  btn.className = ttsEnabled ? 'btn btn-success on' : 'btn';
+  toast(ttsEnabled ? '🔊 TTS enabled' : '🔇 TTS disabled');
+}
+function speakOutput() {
+  const text = document.getElementById('outputBox').textContent.replace('|','').trim();
+  if (text) { speak(text); toast('🔊 Speaking: ' + text); } else toast('Nothing to speak yet!');
+}
+
+// STT
+function toggleSTT() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) { toast('⚠️ Speech recognition not supported', 'warn'); return; }
+  if (sttActive) {
+    recognition && recognition.stop(); sttActive = false;
+    document.getElementById('sttBtn').textContent = '🎤 Listen';
+    document.getElementById('sttDot').className = 'dot';
+    document.getElementById('sttBox').classList.remove('mic-on');
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.continuous = true; recognition.interimResults = true; recognition.lang = 'en-US';
+  recognition.onstart = () => {
+    sttActive = true;
+    document.getElementById('sttBtn').textContent = '⏹ Stop';
+    document.getElementById('sttDot').className = 'dot warn';
+    document.getElementById('sttBox').classList.add('mic-on');
+    document.getElementById('sttBox').textContent = 'Listening...';
+  };
+  recognition.onresult = e => {
+    let interim='', final='';
+    for (let i=e.resultIndex; i<e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) final+=t; else interim+=t;
+    }
+    document.getElementById('sttBox').textContent = final || interim || 'Listening...';
+    if (final) {
+      const box = document.getElementById('outputBox');
+      const cur = box.textContent.replace('|','').trim();
+      box.innerHTML = (cur?cur+' ':'') + '['+final.trim()+']<span class="cursor"></span>';
+    }
+  };
+  recognition.onerror = e => { toast('STT error: '+e.error,'warn'); sttActive=false; };
+  recognition.onend = () => { if (sttActive) recognition.start(); };
+  recognition.start();
+}
+
+// OUTPUT
+function clearOutput() { document.getElementById('outputBox').innerHTML='<span class="cursor"></span>'; document.getElementById('callSign').textContent='—'; toast('Output cleared'); }
+function doBackspace() { const b=document.getElementById('outputBox'); const t=b.textContent.replace('|',''); b.innerHTML=t.slice(0,-1)+'<span class="cursor"></span>'; }
+function addSpace() { const b=document.getElementById('outputBox'); b.innerHTML=b.textContent.replace('|','')+'&nbsp;<span class="cursor"></span>'; }
+function copyOutput() {
+  const text = document.getElementById('outputBox').textContent.replace('|','').trim();
+  if (text) { navigator.clipboard.writeText(text).then(()=>toast('📋 Copied!')).catch(()=>toast('Copy failed')); } else toast('Nothing to copy!');
+}
+function clearHistory() { document.getElementById('histList').innerHTML='<div data-empty style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;font-family:\'JetBrains Mono\',monospace">No gestures yet...</div>'; }
+
+// AI INTERPRET
+async function interpretWithAI() {
+  const text = document.getElementById('outputBox').textContent.replace('|','').trim();
+  if (!text) { toast('Sign something first!'); return; }
+  const bubble = document.getElementById('aiBubble');
+  bubble.classList.add('thinking');
+  bubble.innerHTML = '<div class="ai-label">AI</div><div style="display:flex;align-items:center;gap:8px"><div class="thinking-dots"><span></span><span></span><span></span></div><span style="color:var(--text3);font-size:0.82rem">Interpreting signs...</span></div>';
+  try {
+    const res = await fetch('/interpret', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text, mode: currentMode })
+    });
+    const data = await res.json();
+    bubble.classList.remove('thinking');
+    bubble.innerHTML = '<div class="ai-label">AI</div>' + (data.interpretation || localInterpret(text));
+  } catch(e) {
+    bubble.classList.remove('thinking');
+    bubble.innerHTML = '<div class="ai-label">AI</div>' + localInterpret(text);
+  }
+}
+function localInterpret(text) {
+  const t = text.toUpperCase().trim();
+  const map = { 'HELLO':'A warm ASL greeting.','I LOVE YOU':'The iconic ILY handshape.','YES':'Affirmation gesture.','NO':'Negation gesture.','THANK YOU':'Gratitude sign.','OK':'Approval sign.','CALL ME':'Request a call.','WAIT':'Request to pause.','GOOD':'Positive affirmation.' };
+  if (map[t]) return `Detected: "${text}". ${map[t]}`;
+  if (t.length<=5) return `Detected letters: ${t.split('').join('-')}. May spell a short word.`;
+  return `Detected: "${text}". This appears to be a sequence of ASL signs.`;
+}
+
+// VIDEO CALL — Real WebRTC + Socket.IO
+const socket = io(window.location.origin, { autoConnect: false });
+let rtcOn = false, peerConnection = null, callStream = null;
+let currentRoom = null, remotePeerId = null;
+let micEnabled = true, camEnabled = true;
+
+const rtcConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
+  ]
+};
+
+// Socket.IO event handlers
+socket.on('connect', () => { console.log('[WS] Connected:', socket.id); });
+socket.on('disconnect', () => { console.log('[WS] Disconnected'); if (rtcOn) cleanupCall(); });
+
+socket.on('room_joined', (data) => {
+  console.log('[WS] Joined room:', data.room, 'peers:', data.peers);
+  if (data.peers.length > 0) {
+    remotePeerId = data.peers[0];
+    createOffer();
+  } else {
+    toast('📞 Waiting for peer to join room...');
+  }
+});
+
+socket.on('new_peer', (data) => {
+  console.log('[WS] New peer:', data.sid);
+  remotePeerId = data.sid;
+  // The new peer will send an offer, we wait
+});
+
+socket.on('peer_left', (data) => {
+  toast('👋 Peer disconnected');
+  cleanupPeerConnection();
+  document.getElementById('remoteCallVideo').style.display = 'none';
+  document.getElementById('remoteAvatar').style.display = 'flex';
+  document.getElementById('remoteSign').textContent = '—';
+  document.getElementById('rtcDot').className = 'dot warn';
+  document.getElementById('rtcTxt').textContent = 'Peer Left';
+});
+
+socket.on('webrtc_offer', async (data) => {
+  console.log('[WS] Received offer from:', data.sender);
+  remotePeerId = data.sender;
+  await createPeerConnection();
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
+  socket.emit('webrtc_answer', { sdp: answer, target: data.sender });
+});
+
+socket.on('webrtc_answer', async (data) => {
+  console.log('[WS] Received answer from:', data.sender);
+  if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+});
+
+socket.on('webrtc_ice', async (data) => {
+  if (peerConnection && data.candidate) {
+    try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); }
+    catch(e) { console.warn('[ICE] Error:', e); }
+  }
+});
+
+socket.on('remote_sign', (data) => {
+  document.getElementById('remoteSign').textContent = data.sign || '—';
+});
+
+async function startCall() {
+  if (rtcOn) return;
+  const roomId = document.getElementById('roomIdInput').value.trim() || 'signai-room-1';
+  try {
+    callStream = await navigator.mediaDevices.getUserMedia({ video: { width:{ideal:640}, height:{ideal:480} }, audio: true });
+    const localVid = document.getElementById('localCallVideo');
+    localVid.srcObject = callStream;
+    localVid.style.display = 'block';
+    document.getElementById('localAvatar').style.display = 'none';
+    document.getElementById('startCallBtn').style.display = 'none';
+    document.getElementById('endCallBtn').style.display = 'inline-flex';
+    document.getElementById('muteMicBtn').style.display = 'inline-flex';
+    document.getElementById('muteCamBtn').style.display = 'inline-flex';
+    document.getElementById('rtcDot').className = 'dot warn';
+    document.getElementById('rtcTxt').textContent = 'Connecting...';
+    rtcOn = true;
+    currentRoom = roomId;
+    if (!socket.connected) socket.connect();
+    socket.emit('join_call', { room: roomId });
+    toast('📞 Joined room: ' + roomId);
+  } catch(e) {
+    toast('❌ Camera/mic denied: ' + e.message, 'error');
+  }
+}
+
+async function createPeerConnection() {
+  cleanupPeerConnection();
+  peerConnection = new RTCPeerConnection(rtcConfig);
+  if (callStream) callStream.getTracks().forEach(t => peerConnection.addTrack(t, callStream));
+  peerConnection.onicecandidate = (e) => {
+    if (e.candidate && remotePeerId) {
+      socket.emit('webrtc_ice', { candidate: e.candidate, target: remotePeerId });
+    }
+  };
+  peerConnection.ontrack = (e) => {
+    const remoteVid = document.getElementById('remoteCallVideo');
+    remoteVid.srcObject = e.streams[0];
+    remoteVid.style.display = 'block';
+    document.getElementById('remoteAvatar').style.display = 'none';
+    document.getElementById('rtcDot').className = 'dot live';
+    document.getElementById('rtcTxt').textContent = 'Connected';
+    toast('✅ Peer connected!');
+  };
+  peerConnection.onconnectionstatechange = () => {
+    const st = peerConnection.connectionState;
+    if (st === 'failed' || st === 'disconnected') {
+      document.getElementById('rtcDot').className = 'dot warn';
+      document.getElementById('rtcTxt').textContent = st === 'failed' ? 'Failed' : 'Reconnecting...';
+    }
+  };
+}
+
+async function createOffer() {
+  await createPeerConnection();
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+  socket.emit('webrtc_offer', { sdp: offer, target: remotePeerId });
+}
+
+function endCall() {
+  if (currentRoom) socket.emit('leave_call', { room: currentRoom });
+  cleanupCall();
+  toast('📵 Call ended');
+}
+
+function cleanupCall() {
+  cleanupPeerConnection();
+  if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
+  document.getElementById('localCallVideo').style.display = 'none';
+  document.getElementById('localCallVideo').srcObject = null;
+  document.getElementById('localAvatar').style.display = 'flex';
+  document.getElementById('remoteCallVideo').style.display = 'none';
+  document.getElementById('remoteCallVideo').srcObject = null;
+  document.getElementById('remoteAvatar').style.display = 'flex';
+  document.getElementById('startCallBtn').style.display = 'inline-flex';
+  document.getElementById('endCallBtn').style.display = 'none';
+  document.getElementById('muteMicBtn').style.display = 'none';
+  document.getElementById('muteCamBtn').style.display = 'none';
+  document.getElementById('rtcDot').className = 'dot';
+  document.getElementById('rtcTxt').textContent = 'Not Connected';
+  document.getElementById('remoteSign').textContent = '—';
+  rtcOn = false; currentRoom = null; remotePeerId = null;
+  micEnabled = true; camEnabled = true;
+}
+
+function cleanupPeerConnection() {
+  if (peerConnection) { peerConnection.close(); peerConnection = null; }
+}
+
+function toggleCallMic() {
+  if (!callStream) return;
+  micEnabled = !micEnabled;
+  callStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
+  document.getElementById('muteMicBtn').textContent = micEnabled ? '🎤' : '🔇';
+  document.getElementById('muteMicBtn').className = micEnabled ? 'btn' : 'btn btn-danger';
+  toast(micEnabled ? '🎤 Mic on' : '🔇 Mic muted');
+}
+
+function toggleCallCam() {
+  if (!callStream) return;
+  camEnabled = !camEnabled;
+  callStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
+  document.getElementById('muteCamBtn').textContent = camEnabled ? '📷' : '🚫';
+  document.getElementById('muteCamBtn').className = camEnabled ? 'btn' : 'btn btn-danger';
+  toast(camEnabled ? '📷 Camera on' : '🚫 Camera off');
+}
+
+function copyRoomLink() {
+  const room = document.getElementById('roomIdInput').value.trim();
+  navigator.clipboard.writeText(window.location.origin + '?room=' + encodeURIComponent(room))
+    .then(() => toast('🔗 Room link copied!'))
+    .catch(() => toast('Copy failed'));
+}
+
+// Broadcast detected signs to peers during call
+function broadcastSign(sign) {
+  if (rtcOn && currentRoom && socket.connected) {
+    socket.emit('call_sign', { sign: sign, room: currentRoom });
+  }
+}
+// ASL GUIDE
+const ASL_DESCRIPTIONS = {
+  A:'Fist, thumb beside index finger',B:'Flat hand, fingers up, thumb tucked',
+  C:'Curved hand like letter C shape',D:'Index up, others touch thumb tip',
+  E:'Fingers curled, thumb tucked under',F:'Thumb+index circle, others up',
+  G:'Index+thumb point sideways',H:'Index+middle point sideways',
+  I:'Fist with pinky extended up',J:'Pinky traces J in the air',
+  K:'Index+middle up, thumb between',L:'L-shape: thumb+index extended',
+  M:'Thumb under 3 fingers on fist',N:'Thumb under 2 fingers on fist',
+  O:'All fingertips touch thumb (O)',P:'K-shape pointing downward',
+  Q:'G-shape pointing downward',R:'Cross index over middle finger',
+  S:'Fist with thumb over fingers',T:'Thumb between index+middle',
+  U:'Index+middle together, up',V:'Index+middle spread apart (peace)',
+  W:'Index+middle+ring spread apart',X:'Index finger bent like hook',
+  Y:'Thumb+pinky out, others closed',Z:'Index traces Z in the air'
+};
+function buildGuideGrid() {
+  const grid = document.getElementById('guideGrid');
+  Object.entries(ASL_DESCRIPTIONS).forEach(([letter, desc]) => {
+    const card = document.createElement('div');
+    card.className = 'guide-card';
+    card.innerHTML = `<div class="guide-letter">${letter}</div><div class="guide-desc">${desc}</div>`;
+    grid.appendChild(card);
+  });
+}
+buildGuideGrid();
+
+function showGuideTab(tab) {
+  document.querySelectorAll('.guide-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.guide-pane').forEach(p => p.classList.remove('active'));
+  if (tab === 'images') {
+    document.querySelectorAll('.guide-tab')[0].classList.add('active');
+    document.getElementById('guideImages').classList.add('active');
+  } else {
+    document.querySelectorAll('.guide-tab')[1].classList.add('active');
+    document.getElementById('guideDesc').classList.add('active');
+  }
+}
+
+// TOAST
+function toast(msg, type='info') {
+  const wrap = document.getElementById('toastWrap');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  if (type==='error') el.style.borderColor='rgba(255,77,109,0.4)';
+  if (type==='warn') el.style.borderColor='rgba(255,190,11,0.4)';
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(()=>{ el.style.transition='opacity 0.3s,transform 0.3s'; el.style.opacity='0'; el.style.transform='translateY(6px)'; setTimeout(()=>el.remove(),320); }, 2800);
+}
+
+// INIT
+toast('✋ SignAI ready — click Start Camera to begin!');
+
+// Auto-fill room from URL param
+const urlRoom = new URLSearchParams(window.location.search).get('room');
+if (urlRoom) { document.getElementById('roomIdInput').value = urlRoom; toast('🔗 Room preset: ' + urlRoom); }
+</script>
+</body>
+</html>
